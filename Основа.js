@@ -42,7 +42,11 @@ const Словарь_перевода = {
     'ПО': 'ON',
     'ПЕРЕКРЁСТНО': 'CROSS',
     'ИСПОЛЬЗУЯ': 'USING',
-    'ВСТАВИТЬ ИЛИ ___ В': 'INSERT OR ___ INTO',
+    'ВСТАВИТЬ ИЛИ ПРЕРВАТЬ В': 'INSERT OR ABORT INTO',
+    'ВСТАВИТЬ ИЛИ СБОЙ В': 'INSERT OR FAIL INTO',
+    'ВСТАВИТЬ ИЛИ ПРОПУСТИТЬ В': 'INSERT OR IGNORE INTO',
+    'ВСТАВИТЬ ИЛИ ЗАМЕНИТЬ В': 'INSERT OR REPLACE INTO',
+    'ВСТАВИТЬ ИЛИ ОТКАТИТЬ В': 'INSERT OR ROLLBACK INTO',
     'ДОБАВИТЬ В': 'INSERT INTO',
     'ЗНАЧЕНИЯ': 'VALUES',
     'ИЗМЕНИТЬ': 'UPDATE',
@@ -116,7 +120,38 @@ const Словарь_перевода = {
     'ПО_УМОЛЧАНИЮ': 'DEFAULT',
     'САМОУВЕЛИЧИВАЮЩЕЕСЯ': 'AUTOINCREMENT',
     'ССЫЛАЕТСЯ НА': 'REFERENCES',
+    'БЕЗ ИСКЛЮЧЕНИЙ': 'EXCLUDE NO OTHERS',
+    'ИСКЛЮЧАЯ ТЕКУЩУЮ СТРОКУ': 'EXCLUDE CURRENT ROW',
+    'ИСКЛЮЧАЯ ГРУППУ': 'EXCLUDE GROUP',
+    'ИСКЛЮЧАЯ РАВНЫЕ': 'EXCLUDE TIES',
+    'РАЗДЕЛИВ ПО': 'PARTITION BY',
     'ОТОБРАВ': 'FILTER',
+    'ПРИВЕСТИ': 'CAST',
+    'НАД': 'OVER',
+    'ГРУППЫ': 'GROUPS',
+    'ДИАПАЗОН': 'RANGE',
+    'СТРОКИ': 'ROWS',
+    'ПЕРВОЕ_НЕПУСТОЕ': 'COALESCE',
+    'ТЕКУЩЕЙ СТРОКОЙ': 'CURRENT ROW',
+    'НЕОГРАНИЧЕННО': 'UNBOUNDED',
+    'ВПЕРЁД': 'FOLLOWING',
+    'НАЗАД': 'PRECEDING',
+    'НОМЕР_СТРОКИ': 'ROW_NUMBER',
+    'РАНГ': 'RANK',
+    'СЖАТЫЙ_РАНГ': 'DENSE_RANK',
+    'РАЗДЕЛИТЬ_НА_ЧАСТИ': 'NTILE',
+    'ПРЕДЫДУЩЕЕ': 'LAG',
+    'СЛЕДУЮЩЕЕ': 'LEAD',
+    'SIN': 'SIN',
+    'COS': 'COS',
+    'TG': 'TAN',
+    'ARCSIN': 'ASIN',
+    'ARCCOS': 'ACOS',
+    'ARCTG': 'ATAN',
+    'LN': 'LOG',
+    'EXP': 'EXP',
+    'СТЕПЕНЬ': 'POWER',
+    'КВАДРАТНЫЙ_КОРЕНЬ': 'SQRT',
     'КОЛИЧЕСТВО': 'COUNT',
     'СУММА': 'SUM',
     'СРЕДНЕЕ': 'AVG',
@@ -151,14 +186,16 @@ const Словарь_перевода = {
     'ОБРЕЗАТЬ_СЛЕВА': 'LTRIM',
     'ОБРЕЗАТЬ_СПРАВА': 'RTRIM',
     'ОБЩЕЕ': 'TOTAL',
+    'ГРУППОВОЕ_СЦЕПЛЕНИЕ': 'GROUP_CONCAT',
     'СТАНДАРТНОЕ_ОТКЛОНЕНИЕ': 'STDDEV',
     'ДИСПЕРСИЯ': 'VARIANCE',
-    'СТРОКА_В_ЧИСЛО': 'CAST',
+    'ПЕРВОЕ_ЗНАЧЕНИЕ': 'FIRST_VALUE',
+    'ПОСЛЕДНЕЕ_ЗНАЧЕНИЕ': 'LAST_VALUE',
     'МАКСИМАЛЬНАЯ_ДЛИНА': 'MAXLEN',
     'МИНИМАЛЬНАЯ_ДЛИНА': 'MINLEN',
     'СЖАТЬ': 'COMPRESS',
     'РАСЖАТЬ': 'UNCOMPRESS',
-    'ВЫЧИСЛИТЬ_ХЭШ': 'HEX',
+    'В_ШЕСТН_ТЕКСТ': 'HEX',
     'ЗАКОДОВАТЬ_64': 'BASE64',
     'РАСКОДОВАТЬ_64': 'UNBASE64',
     'ВКЛЮЧЕНО': 'ON',
@@ -213,7 +250,9 @@ const Переводы_ошибок = [
     [/parameters are of unsupported type/i, 'Параметры имеют неподдерживаемый тип.'],
     [/out of memory/i, 'Недостаточно памяти для выполнения операции.'],
     [/WebAssembly compilation failed/i, 'Не удалось скомпилировать WebAssembly-модуль.'],
-    [/table (.+) has (\d+) columns but (\d+) values were supplied/i, 'Столбцов в таблице "$1" - $2, но получено значений - $3.']
+    [/table (.+) has (\d+) columns but (\d+) values were supplied/i, 'Столбцов в таблице "$1" - $2, но получено значений - $3.'],
+    [/tried to bind a value of an unknown type \((.+)\)/i, 'Попытка привязки значения неизвестного типа ($1).'],
+    [/Statement closed/i, 'Указатель закрыт.']
 ];
 
 function Получить_токены(запрос) {
@@ -300,28 +339,26 @@ function Перевести_токены(токены) {
             continue;
         }
 
+        const токен_в_верхнем_регистре = токен.toUpperCase();
+        if (токен !== токен_в_верхнем_регистре) {
+            переведённые_токены.push(токен);
+            сч_1++;
+            continue;
+        }
+
         let найдено_ключевое_слово = false;
         for (let длина = 5; длина > 0; длина--) {
             if (сч_1 + длина > токены.length) continue;
 
-            const фраза = токены.slice(сч_1, сч_1 + длина).join(' ').toUpperCase();
+            const фраза_токены = токены.slice(сч_1, сч_1 + длина);
+            if (фраза_токены.some(t => t !== t.toUpperCase())) {
+                continue;
+            }
+
+            const фраза = фраза_токены.join(' ').toUpperCase();
 
             for (const [ключ, значение] of Object.entries(Словарь_перевода)) {
-                if (ключ.includes('___')) {
-                    const части = ключ.split('___');
-                    const шаблон = '^' + части[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(\\S+)' + части[1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$';
-                    const совпадение = фраза.match(new RegExp(шаблон));
-                    if (совпадение) {
-                        const переменная = совпадение[1].toUpperCase();
-                        const переведённая_переменная = Словарь_перевода[переменная] || переменная;
-                        const переведённая_фраза = значение.replace('___', переведённая_переменная);
-                        переведённые_токены.push(переведённая_фраза);
-                        сч_1 += длина;
-                        найдено_ключевое_слово = true;
-                        break;
-                    }
-                }
-                else if (фраза === ключ) {
+                if (фраза === ключ) {
                     переведённые_токены.push(значение);
                     сч_1 += длина;
                     найдено_ключевое_слово = true;
@@ -346,8 +383,7 @@ function Собрать_запрос(токены) {
         const токен = токены[сч_1];
         if (',;()=<>!'.includes(токен)) {
             запрос += токен;
-        }
-        else {
+        } else {
             if (сч_1 > 0 && !',;(=<>!'.includes(токены[сч_1 - 1])) {
                 запрос += ' ';
             }
@@ -382,21 +418,25 @@ class Указатель {
     }
 
     async Извлечь_запись() {
-        if (!this.для_выборки)
-            throw new Ошибка('Невозможно извлечь запись для не-ВЫБРАТЬ запроса.');
+        if (!this.для_выборки) {
+            console.log('Невозможно извлечь запись для не-ВЫБРАТЬ запроса.');
+            return null;
+        }
         try {
             const результат = this.указатель.step() ? this.указатель.getAsObject() : null;
             if (!this.указатель.step()) this.указатель.free();
             return результат;
-        }
-        catch (ош) {
-            throw Перевести_ошибку(ош);
+        } catch (ош) {
+            console.log(Перевести_ошибку(ош).message);
+            return null;
         }
     }
 
     async Извлечь_все_записи() {
-        if (!this.для_выборки)
-            throw new Ошибка('Невозможно извлечь записи для не-ВЫБРАТЬ запроса.');
+        if (!this.для_выборки) {
+            console.log('Невозможно извлечь записи для не-ВЫБРАТЬ запроса.');
+            return [];
+        }
         try {
             const результаты = [];
             while (this.указатель.step()) {
@@ -404,18 +444,22 @@ class Указатель {
             }
             this.указатель.free();
             return результаты;
-        }
-        catch (ош) {
-            throw Перевести_ошибку(ош);
+        } catch (ош) {
+            console.log(Перевести_ошибку(ош).message);
+            try {
+                this.указатель.free();
+            } catch (freeErr) {
+                console.log(Перевести_ошибку(freeErr).message);
+            }
+            return [];
         }
     }
 
     async Закрыть() {
         try {
             this.указатель.free();
-        }
-        catch (ош) {
-            throw Перевести_ошибку(ош);
+        } catch (ош) {
+            console.log(Перевести_ошибку(ош).message);
         }
     }
 
@@ -444,49 +488,80 @@ class Соединение {
             let база_данных;
             if (путь.toLowerCase() === ':память:') {
                 база_данных = new SQL.Database();
-            }
-            else {
+            } else {
                 const ФС = require('fs').promises;
                 let буфер_файла;
                 if (является_ссылкой) {
                     буфер_файла = путь;
-                }
-                else {
+                } else {
                     try {
                         буфер_файла = await ФС.readFile(путь);
-                    }
-                    catch (ош) {
+                    } catch (ош) {
                         if (ош.code === 'ENOENT') {
                             база_данных = new SQL.Database();
                             return new Соединение(база_данных, путь);
                         }
-                        throw ош;
+                        console.log(Перевести_ошибку(ош).message);
+                        return null;
                     }
                 }
                 база_данных = new SQL.Database(буфер_файла);
             }
             return new Соединение(база_данных, путь);
-        }
-        catch (ош) {
-            throw Перевести_ошибку(ош);
+        } catch (ош) {
+            console.log(Перевести_ошибку(ош).message);
+            return null;
         }
     }
 
     async Выполнить_запрос(запрос, параметры = []) {
         try {
-            const
-                переведённый = Перевести_код_запроса(запрос),
-                для_выборки = переведённый.trim().toUpperCase().startsWith('SELECT'),
+            const переведённый = Перевести_код_запроса(запрос);
+            const для_выборки = переведённый.trim().toUpperCase().startsWith('SELECT');
+            let указатель;
+            try {
                 указатель = this.база_данных.prepare(переведённый);
-            if (параметры.length > 0) указатель.bind(параметры);
+            } catch (prepareErr) {
+                console.log(Перевести_ошибку(prepareErr).message);
+                return null;
+            }
+            if (параметры.length > 0) {
+                try {
+                    указатель.bind(параметры);
+                } catch (bindErr) {
+                    console.log(Перевести_ошибку(bindErr).message);
+                    указатель.free();
+                    return null;
+                }
+            }
             if (!для_выборки) {
-                указатель.run();
+                try {
+                    указатель.run();
+                } catch (runErr) {
+                    console.log(Перевести_ошибку(runErr).message);
+                    return null;
+                } finally {
+                    указатель.free();
+                }
+                return null;
+            }
+            try {
+                const canStep = указатель.step();
+                указатель.reset();
+                if (!canStep && !указатель.getColumnNames().length) {
+                    console.log('Запрос не вернул данных или таблица не существует.');
+                    указатель.free();
+                    return null;
+                }
+            } catch (stepErr) {
+                console.log(Перевести_ошибку(stepErr).message);
                 указатель.free();
+                return null;
             }
             return new Указатель(this.база_данных, указатель, для_выборки);
-        }
-        catch (ош) {
-            throw Перевести_ошибку(ош);
+        } catch (ош) {
+            console.log(Перевести_ошибку(ош).message);
+            return null;
         }
     }
 
@@ -494,9 +569,8 @@ class Соединение {
         try {
             const переведённый = Перевести_код_запроса(сценарий);
             this.база_данных.exec(переведённый);
-        }
-        catch (ош) {
-            throw Перевести_ошибку(ош);
+        } catch (ош) {
+            console.log(Перевести_ошибку(ош).message);
         }
     }
 
@@ -504,9 +578,8 @@ class Соединение {
         await this.Сохранить();
         try {
             this.база_данных.close();
-        }
-        catch (ош) {
-            throw Перевести_ошибку(ош);
+        } catch (ош) {
+            console.log(Перевести_ошибку(ош).message);
         }
     }
 
@@ -515,9 +588,8 @@ class Соединение {
             if (!путь) путь = this.путь;
             const данные = this.база_данных.export();
             await ФС.writeFile(путь, Buffer.from(данные));
-        }
-        catch (ош) {
-            throw Перевести_ошибку(ош);
+        } catch (ош) {
+            console.log(Перевести_ошибку(ош).message);
         }
     }
 }
